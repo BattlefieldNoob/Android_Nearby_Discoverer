@@ -21,15 +21,13 @@ import org.jetbrains.anko.listView
 
 class MainActivity : AppCompatActivity() {
 
-    lateinit var GoogleClient: GoogleApiClient
-
     val endpointDiscoveryCallback = IoTEndpointDiscoveryCallback(this)
 
     var ConnectionCallback = IoTNearbyConnectionCallback(this)
 
     var payloadCallback= IoTPayloadCallback(this)
 
-    var googleApiClientCallback= IoTGoogleApiClientCallback(this)
+    lateinit var nearbyClient:ConnectionsClient
 
     lateinit var eventsListViewAdapter:ArrayAdapter<String>
 
@@ -43,7 +41,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        GoogleClient = GoogleApiClient.Builder(this, googleApiClientCallback, googleApiClientCallback).addApi(Nearby.CONNECTIONS_API).build()
+        eventsListViewAdapter= ArrayAdapter(this,android.R.layout.simple_list_item_1)
+
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -52,10 +51,10 @@ class MainActivity : AppCompatActivity() {
                     arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION),
                     MY_PERMISSIONS_REQUEST_COARSE_LOCATION)
         } else {
-            GoogleClient.connect()
+            nearbyClient = Nearby.getConnectionsClient(this)
+            onGoogleApiResult(true)
         }
 
-        eventsListViewAdapter= ArrayAdapter(this,android.R.layout.simple_list_item_1)
 
 
 
@@ -85,7 +84,7 @@ class MainActivity : AppCompatActivity() {
             MY_PERMISSIONS_REQUEST_COARSE_LOCATION -> {
                 // If request is cancelled, the result arrays are empty.
                 if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    GoogleClient.connect()
+                    nearbyClient = Nearby.getConnectionsClient(this)
                     // permission was granted, yay! Do the
                     // contacts-related task you need to do.
 
@@ -110,13 +109,11 @@ class MainActivity : AppCompatActivity() {
     fun onGoogleApiResult(success:Boolean){
         if(success) {
             eventsListViewAdapter.add("Google Api Connected!")
-            Nearby.Connections.startDiscovery(GoogleClient, "Raspberry", endpointDiscoveryCallback, DiscoveryOptions(Strategy.P2P_CLUSTER)).setResultCallback { status ->
-                if (status.isSuccess) {
-                    eventsListViewAdapter.add("Discovery Started Successfully!")
-                    Log.d(TAG, "Success!")
-                } else {
-                    Log.e(TAG, "Error!")
-                }
+            nearbyClient.startDiscovery( "Raspberry", endpointDiscoveryCallback, DiscoveryOptions(Strategy.P2P_CLUSTER)).addOnSuccessListener {
+                eventsListViewAdapter.add("Discovery Started Successfully!")
+                Log.d(TAG, "Success!")
+            }.addOnFailureListener {
+                Log.e(TAG, "Error!  ${it.message}")
             }
         }else{
             Log.e(TAG, "Error!")
@@ -125,15 +122,11 @@ class MainActivity : AppCompatActivity() {
 
     fun onNearbyEndpointFound(endpointId:String,endpointName:String){
         eventsListViewAdapter.add("Endpoint found with name:$endpointName (id:$endpointId)")
-        Nearby.Connections.requestConnection(GoogleClient,"Raspberry",endpointId,ConnectionCallback).setResultCallback {
-            status ->
-            if(status.isSuccess){
-                Log.d(TAG,"Connected!")
-            }else{
-                Log.d(TAG,"Error!")
-                if(status.statusMessage!=null)
-                    Log.d(TAG,status.statusMessage)
-            }
+        nearbyClient.requestConnection("Raspberry",endpointId,ConnectionCallback).addOnSuccessListener {
+            eventsListViewAdapter.add("Discovery Started Successfully!")
+            Log.d(TAG,"Connected!")
+        }.addOnFailureListener {
+            Log.d(TAG,"Error!")
         }
     }
 
@@ -145,7 +138,7 @@ class MainActivity : AppCompatActivity() {
 
         if (success) {
             eventsListViewAdapter.add("Connected to endpoint id:$endpointId")
-            Nearby.Connections.sendPayload(GoogleClient, endpointId, Payload.fromBytes("Hello!!".toByteArray()))
+            nearbyClient.sendPayload(endpointId, Payload.fromBytes("Hello!!".toByteArray()))
         }else{
             Log.d(TAG,"Error!")
         }
